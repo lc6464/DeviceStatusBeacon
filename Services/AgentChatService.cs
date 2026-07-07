@@ -14,7 +14,7 @@ public sealed class AgentChatService(HttpClient httpClient, IDeviceStatusQuerySe
 	private const int MaxToolRounds = 8;
 	private const int MaxToolCalls = 8;
 	private const int MaxDeviceCount = 20;
-	private const int MaxDeviceLogCount = 10;
+	private const int MaxDeviceLogCount = 50;
 	private const int MaxHistoryMessageCount = 80;
 	private const int MaxHistoryCharacterCount = 200_000;
 
@@ -65,7 +65,6 @@ public sealed class AgentChatService(HttpClient httpClient, IDeviceStatusQuerySe
 
 		// newMessages 只记录本轮新增的 assistant/tool 消息，返回给前端后由前端拼入 localStorage 历史
 		var newMessages = new JsonArray();
-		var toolCallCount = 0;
 
 		await writeEventAsync("status", new {
 			text = "正在调用模型。"
@@ -94,6 +93,9 @@ public sealed class AgentChatService(HttpClient httpClient, IDeviceStatusQuerySe
 				await writeEventAsync("done", null, cancellationToken);
 				return;
 			}
+
+			// 针对每一次请求做工具调用次数限制，单轮对话最多为 MaxToolCalls * MaxToolRounds 次工具调用，避免模型或兼容接口异常时陷入长时间工具循环
+			var toolCallCount = 0;
 
 			foreach (var toolCallNode in toolCalls) {
 				cancellationToken.ThrowIfCancellationRequested();
@@ -452,7 +454,7 @@ public sealed class AgentChatService(HttpClient httpClient, IDeviceStatusQuerySe
 					},
 					["take"] = new JsonObject {
 						["type"] = "integer",
-						["description"] = "返回日志数量，范围 1 到 10。"
+						["description"] = "返回日志数量，范围 1 到 50；如果没有长流程回溯的需求，建议控制在 10 以内。"
 					}
 				},
 				["required"] = new JsonArray("deviceName"),
