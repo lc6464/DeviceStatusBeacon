@@ -1,16 +1,18 @@
 const activityTarget = document.getElementById("dashboard-activity");
 const totalLogCountTarget = document.getElementById("dashboard-total-log-count");
+const deviceNamePlaceholder = "DeviceNamePlaceholder";
 
 // 仪表板页面是单实例结构，直接按约定的元素 ID 读取即可
 if (activityTarget instanceof HTMLElement) {
     const activityUrl = activityTarget.dataset.activityUrl;
+    const deviceDetailsUrlTemplate = activityTarget.dataset.deviceDetailsUrlTemplate;
     if (activityUrl) {
-        void loadDashboardActivity(activityUrl, activityTarget, totalLogCountTarget);
+        void loadDashboardActivity(activityUrl, activityTarget, totalLogCountTarget, deviceDetailsUrlTemplate);
     }
 }
 
 // 加载仪表板最近活动数据，并在成功后刷新对应内容区域
-async function loadDashboardActivity(activityUrl, target, totalLogCountTarget) {
+async function loadDashboardActivity(activityUrl, target, totalLogCountTarget, deviceDetailsUrlTemplate) {
     try {
         const response = await fetch(activityUrl, {
             headers: {
@@ -24,7 +26,7 @@ async function loadDashboardActivity(activityUrl, target, totalLogCountTarget) {
         }
 
         const data = await response.json();
-        renderDashboardActivity(target, data, totalLogCountTarget);
+        renderDashboardActivity(target, data, totalLogCountTarget, deviceDetailsUrlTemplate);
     } catch {
         // 按需摘要与最近活动共享同一请求，失败时统一回落到占位值
         setMetricValue(totalLogCountTarget, "-");
@@ -34,7 +36,7 @@ async function loadDashboardActivity(activityUrl, target, totalLogCountTarget) {
 }
 
 // 把最近活动响应数据渲染为设备活动列表
-function renderDashboardActivity(target, data, totalLogCountTarget) {
+function renderDashboardActivity(target, data, totalLogCountTarget, deviceDetailsUrlTemplate) {
     // 对外部 JSON 做最小结构约束，避免异常响应直接破坏页面渲染，同时做空值回落
     const accessibleLogCount = Number.isInteger(data.accessibleLogCount) ? data.accessibleLogCount : "-";
     const recentDeviceActivities = Array.isArray(data.recentDeviceActivities)
@@ -44,7 +46,7 @@ function renderDashboardActivity(target, data, totalLogCountTarget) {
     setMetricValue(totalLogCountTarget, accessibleLogCount);
 
     target.dataset.activityState = "ready";
-    target.replaceChildren(renderRecentDeviceActivities(recentDeviceActivities));
+    target.replaceChildren(renderRecentDeviceActivities(recentDeviceActivities, deviceDetailsUrlTemplate));
 }
 
 // 把延后加载的摘要指标同步到顶部概览卡片
@@ -55,7 +57,7 @@ function setMetricValue(target, value) {
 }
 
 // 渲染近期活跃设备列表
-function renderRecentDeviceActivities(devices) {
+function renderRecentDeviceActivities(devices, deviceDetailsUrlTemplate) {
     if (devices.length === 0) {
         return createEmptyState("近期暂无设备活动。");
     }
@@ -70,6 +72,7 @@ function renderRecentDeviceActivities(devices) {
         const latestReportedAddresses = getRecentReportedAddressSummary(device.latestReportedAddresses);
         const latestReporterRemoteAddress = device.latestReporterRemoteAddress || "未知";
         const recentLogCount = Number.isInteger(device.recentLogCount) ? device.recentLogCount : 0;
+        const deviceDetailsUrl = createTemplateUrl(deviceDetailsUrlTemplate, deviceNamePlaceholder, deviceName);
 
         // 使用 textContent 路径组装纯文本字段，避免依赖模板拼接和 HTML 转义
         const article = createElement("article", {
@@ -85,7 +88,7 @@ function renderRecentDeviceActivities(devices) {
                                     className: `status-pill ${enabledClass}`,
                                     text: enabledText
                                 }),
-                                createDeviceIdentity(deviceName, displayName)
+                                createDeviceIdentity(deviceName, displayName, deviceDetailsUrl)
                             ]
                         }),
                         createElement("div", {
@@ -190,7 +193,7 @@ function createLabeledDetail(label, value, { valueClassName, overflowText } = {}
 }
 
 // 创建 Dashboard 和列表页共用的设备身份结构
-function createDeviceIdentity(deviceName, displayName) {
+function createDeviceIdentity(deviceName, displayName, deviceDetailsUrl) {
     return createElement("div", {
         className: "entity-identity",
         children: [
@@ -200,12 +203,27 @@ function createDeviceIdentity(deviceName, displayName) {
                     text: displayName
                 })
                 : null,
-            createElement("span", {
-                className: "entity-identity__name",
-                text: deviceName
-            })
+            deviceDetailsUrl
+                ? createElement("a", {
+                    className: "entity-identity__name entity-identity__link",
+                    text: deviceName,
+                    attributes: { href: deviceDetailsUrl }
+                })
+                : createElement("span", {
+                    className: "entity-identity__name",
+                    text: deviceName
+                })
         ]
     });
+}
+
+// 使用 Razor 生成的路由模板构造详情地址，兼容应用部署在非根路径下的情况
+function createTemplateUrl(template, placeholder, value) {
+    if (!template || !value) {
+        return null;
+    }
+
+    return template.replace(placeholder, encodeURIComponent(value));
 }
 
 // 创建统一的空状态占位块
@@ -217,7 +235,7 @@ function createEmptyState(message) {
 }
 
 // 创建带可选类名、文本和子节点的 HTML 元素
-function createElement(tagName, { className, text, children = [] } = {}) {
+function createElement(tagName, { className, text, children = [], attributes = {} } = {}) {
     const element = document.createElement(tagName);
 
     if (className) {
@@ -227,6 +245,12 @@ function createElement(tagName, { className, text, children = [] } = {}) {
     if (text !== undefined) {
         // 统一走 textContent，把动态值限制为纯文本写入
         element.textContent = String(text);
+    }
+
+    for (const [name, value] of Object.entries(attributes)) {
+        if (value !== undefined && value !== null) {
+            element.setAttribute(name, String(value));
+        }
     }
 
     for (const child of children) {

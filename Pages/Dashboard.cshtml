@@ -79,7 +79,11 @@
 			</div>
 		</div>
 
-		<div class="dashboard-activity" id="dashboard-activity" data-activity-state="loading" data-activity-url="@Model.ActivityApiPath">
+		<div class="dashboard-activity"
+			 id="dashboard-activity"
+			 data-activity-state="loading"
+			 data-activity-url="@Model.ActivityApiPath"
+			 data-device-details-url-template="@Url.Page("/Devices/Details", new { deviceName = "DeviceNamePlaceholder" })">
 			<div class="empty-state">正在加载近期设备活动。</div>
 		</div>
 	</section>
